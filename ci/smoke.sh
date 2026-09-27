@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# apk-smoke: install -> launch -> hint dismissal -> soak -> screenshots -> monkey -> logcat verdict.
-# Rule 3 compliant: no broad catch-alls; each failure mode checked explicitly, verdict loud.
+# apk-smoke v2: install -> launch -> soak -> screenshots -> monkey -> post-shot -> logcat verdict.
+# v2 fixes (critic grade of run 4): suppress immersive hint before captures, never claim "render"
+# from survival alone, post-monkey frame must differ or FAIL, explicit RENDER-UNKNOWN state.
 set -u
 APK="${1:?usage: smoke.sh <path-to-apk>}"
 OUT="${2:-smoke-out}"
 mkdir -p "$OUT"
 VERDICT="$OUT/VERDICT.txt"
 FAIL=0
+RENDER=UNKNOWN
 note() { echo "$*" | tee -a "$VERDICT"; }
 
 # --- static gate ---
@@ -29,52 +31,44 @@ if ! adb install -r "$APK" > "$OUT/install.txt" 2>&1; then
 fi
 note "INSTALL OK"
 
-# --- launch via launcher intent (no activity name needed) ---
+# --- suppress the immersive-mode hint overlay (run 4: it froze frames and hid content) ---
+adb shell settings put global immersive_mode_confirmations confirmed
+
+# --- launch ---
 adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1
 if [ $? -ne 0 ]; then note "FAIL: could not fire launcher intent for $PKG"; exit 1; fi
 
-# --- dismiss first-launch immersive hint ("GOT IT") if present - exact bounds, fail-soft ---
-sleep 5
-if adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1 && adb shell cat /sdcard/ui.xml 2>/dev/null | grep -q 'text="GOT IT"'; then
-  BLINE="$(adb shell cat /sdcard/ui.xml | grep -o 'text="GOT IT"[^>]*' | head -1)"
-  COORDS="$(echo "$BLINE" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | grep -oE '[0-9]+' | tr '\n' ' ')"
-  set -- $COORDS
-  if [ $# -eq 4 ]; then
-    CX=$(( ($1 + $3) / 2 )); CY=$(( ($2 + $4) / 2 ))
-    adb shell input tap "$CX" "$CY"
-    note "HINT: dismissed immersive hint via GOT IT tap at ${CX},${CY}"
-  else
-    note "WARN: immersive hint present but bounds unparseable - left as-is"
-  fi
-else
-  note "HINT: no immersive hint detected (or uiautomator unavailable)"
-fi
-
 shot() { adb exec-out screencap -p > "$OUT/$1.png" 2>/dev/null; [ -s "$OUT/$1.png" ]; }
-sleep 25; shot shot_t30 || note "WARN: screencap t30 empty"
+sleep 10; shot shot_t10 || note "WARN: screencap t10 empty"
+sleep 20; shot shot_t30 || note "WARN: screencap t30 empty"
 sleep 30; shot shot_t60 || note "WARN: screencap t60 empty"
-sleep 30; shot shot_t90 || note "WARN: screencap t90 empty"
 
-# --- frame heuristics (heuristics, labeled as such) ---
-for t in 30 60 90; do
+for t in 10 30 60; do
   f="$OUT/shot_t$t.png"
   [ -f "$f" ] || continue
   b=$(stat -c%s "$f")
-  # an all-one-color 1080x2400 PNG compresses to a few KB - flag suspiciously tiny frames
   if [ "$b" -lt 8000 ]; then note "WARN: $f is ${b}B - possibly blank/solid frame (heuristic)"; fi
 done
-if [ -f "$OUT/shot_t60.png" ] && [ -f "$OUT/shot_t90.png" ]; then
-  h60=$(sha256sum "$OUT/shot_t60.png" | cut -d' ' -f1)
-  h90=$(sha256sum "$OUT/shot_t90.png" | cut -d' ' -f1)
-  if [ "$h60" = "$h90" ]; then note "WARN: t60 and t90 frames pixel-identical - possible frozen render (heuristic)"; fi
+same() { [ -f "$1" ] && [ -f "$2" ] && [ "$(sha256sum "$1" | cut -d' ' -f1)" = "$(sha256sum "$2" | cut -d' ' -f1)" ]; }
+if same "$OUT/shot_t30.png" "$OUT/shot_t60.png"; then
+  note "WARN: t30/t60 pixel-identical after overlay suppression - static screen or stalled render (heuristic)"
 fi
 
-# --- crash smoke: 500 pseudo-random events ---
+# --- crash smoke ---
 adb shell monkey -p "$PKG" --pct-touch 70 --pct-motion 20 --pct-syskeys 0 --throttle 200 500 > "$OUT/monkey.txt" 2>&1
 grep -q "Events injected: 500" "$OUT/monkey.txt" && note "MONKEY OK: 500 events injected" || note "WARN: monkey did not complete 500 events (see monkey.txt)"
 
-# --- post-monkey capture: did input change anything on screen? ---
-shot shot_post_monkey || note "WARN: post-monkey screencap empty"
+# --- post-monkey frame: a live app must respond to 500 input events ---
+sleep 3; shot shot_postmonkey || note "WARN: post-monkey screencap empty"
+if [ -f "$OUT/shot_t60.png" ] && [ -f "$OUT/shot_postmonkey.png" ]; then
+  if same "$OUT/shot_t60.png" "$OUT/shot_postmonkey.png"; then
+    note "FAIL: frame unchanged after 500 input events - no visual response to input (frozen render or dead surface)"
+    FAIL=1; RENDER=NO-RESPONSE
+  else
+    RENDER=RESPONSIVE
+    note "RENDER OK: frame changed in response to input"
+  fi
+fi
 
 # --- logcat verdict ---
 adb logcat -d > "$OUT/logcat.txt" 2>&1
@@ -86,5 +80,6 @@ if grep -qE "Process $PKG .*has died|Force finishing activity $PKG" "$OUT/logcat
   note "WARN: process died / force-finish recorded for $PKG (see logcat)"
 fi
 
-if [ "$FAIL" -eq 0 ]; then note "VERDICT: PASS (install+launch+render+monkey, no fatal log entries)"; exit 0
+note "RENDER STATE: $RENDER (survival does not prove rendering; pixels do)"
+if [ "$FAIL" -eq 0 ]; then note "VERDICT: PASS (install+launch+survives input, no fatal log entries; render state above)"
 else note "VERDICT: FAIL"; exit 1; fi

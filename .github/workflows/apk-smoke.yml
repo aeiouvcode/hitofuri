@@ -55,6 +55,7 @@ jobs:
           api-level: 34
           arch: ${{ steps.detect.outputs.arch }}
           profile: pixel_6
+          emulator-options: -no-window -gpu angle_indirect -noaudio -no-boot-anim -camera-back none
           emulator-boot-timeout: 1500
           disable-animations: true
           script: bash ci/smoke.sh app.apk smoke-out

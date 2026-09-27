@@ -3,8 +3,12 @@ on:
   workflow_dispatch:
     inputs:
       apk_url:
-        description: "Direct-download URL of the APK to smoke test"
+        description: "Direct-download URL of the APK, or comma-separated part URLs rejoined in order"
         required: true
+      apk_sha256:
+        description: "Optional expected sha256 of the rejoined APK - fails loud on mismatch"
+        required: false
+        default: ""
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -16,8 +20,20 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Fetch APK
-        run: curl -fL --retry 2 -o app.apk "${{ inputs.apk_url }}"
+      - name: Fetch APK (single URL or comma-separated parts, rejoined in order)
+        run: |
+          IFS=',' read -ra URLS <<< "${{ inputs.apk_url }}"
+          rm -f app.apk
+          i=0
+          for u in "${URLS[@]}"; do
+            i=$((i+1))
+            curl -fL --retry 2 -o "apk-part-$i" "$u"
+            cat "apk-part-$i" >> app.apk
+          done
+          echo "fetched ${#URLS[@]} part(s), app.apk = $(stat -c%s app.apk) bytes"
+      - name: Verify APK checksum
+        if: ${{ inputs.apk_sha256 != '' }}
+        run: echo "${{ inputs.apk_sha256 }}  app.apk" | sha256sum -c -
       - name: Detect APK ABI -> emulator arch
         id: detect
         run: |

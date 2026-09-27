@@ -80,6 +80,14 @@ if grep -qE "Process $PKG .*has died|Force finishing activity $PKG" "$OUT/logcat
   note "WARN: process died / force-finish recorded for $PKG (see logcat)"
 fi
 
+# --- shader link failures: render died at GL level - name it precisely ---
+if grep -qE 'Program linking failed|GL_MAX_' "$OUT/logcat.txt"; then
+  note "FAIL: shader link failure (GL uniform limit exceeded on this device's GLES3):"
+  grep -m3 -A1 -E 'Program linking failed|GL_MAX_' "$OUT/logcat.txt" | tee -a "$VERDICT"
+  FAIL=1
+  if [ "$RENDER" = "UNKNOWN" ] || [ "$RENDER" = "NO-RESPONSE" ]; then RENDER="SHADER-LINK-FAIL"; fi
+fi
+
 note "RENDER STATE: $RENDER (survival does not prove rendering; pixels do)"
 if [ "$FAIL" -eq 0 ]; then note "VERDICT: PASS (install+launch+survives input, no fatal log entries; render state above)"
 else note "VERDICT: FAIL"; exit 1; fi

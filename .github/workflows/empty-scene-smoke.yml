@@ -110,6 +110,7 @@ jobs:
           api-level: 34
           arch: x86_64
           profile: pixel_6
+          emulator-options: -no-window -gpu angle_indirect -noaudio -no-boot-anim -camera-back none
           emulator-boot-timeout: 1500
           disable-animations: true
           script: bash ci/smoke.sh empty.apk smoke-out

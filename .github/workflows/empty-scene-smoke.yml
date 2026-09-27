@@ -1,0 +1,105 @@
+name: empty-scene-smoke
+# Decisive experiment: does smoke.sh v3 fail a MINIMAL Godot 4.5 gl_compatibility
+# build with the same GL_MAX_FRAGMENT_UNIFORM_VECTORS (261) shader-link error seen
+# on ISSEN builds? If yes, the SwiftShader instrument is stricter than Godot's base
+# requirement and the gate's software renderer profile needs adjusting.
+# The scene is the smallest project that still exercises both base shader paths:
+# a lit StandardMaterial3D box (scene shader) and a Label (canvas shader).
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Godot 4.5 headless + export templates
+        run: |
+          curl -fL --retry 2 -o godot.zip https://github.com/godotengine/godot/releases/download/4.5-stable/Godot_v4.5-stable_linux.x86_64.zip
+          unzip -q godot.zip
+          chmod +x Godot_v4.5-stable_linux.x86_64
+          curl -fL --retry 2 -o templates.tpz https://github.com/godotengine/godot/releases/download/4.5-stable/Godot_v4.5-stable_export_templates.tpz
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.5.stable"
+          cd "$HOME/.local/share/godot/export_templates/4.5.stable"
+          unzip -q "$GITHUB_WORKSPACE/templates.tpz"
+          mv templates/* .
+          ls android_debug.apk android_release.apk
+
+      - name: Write Android export preset + debug keystore
+        run: |
+          keytool -genkeypair -v -keystore "$GITHUB_WORKSPACE/debug.keystore" \
+            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null
+          cat > ci/empty-scene/export_presets.cfg <<PRESET
+          [preset.0]
+
+          name="Android"
+          platform="Android"
+          runnable=true
+          custom_features=""
+          export_filter="all_resources"
+          include_filter=""
+          exclude_filter=""
+          export_path=""
+          encrypt_pck=false
+          encrypt_directory=false
+
+          [preset.0.options]
+
+          custom_template/debug=""
+          custom_template/release=""
+          gradle_build/use_gradle_build=false
+          gradle_build/export_format=0
+          gradle_build/min_sdk=""
+          gradle_build/target_sdk=""
+          architectures/armeabi-v7a=false
+          architectures/arm64-v8a=false
+          architectures/x86=false
+          architectures/x86_64=true
+          keystore/debug="$GITHUB_WORKSPACE/debug.keystore"
+          keystore/debug_user="androiddebugkey"
+          keystore/debug_password="android"
+          keystore/release=""
+          keystore/release_user=""
+          keystore/release_password=""
+          version/code=1
+          version/name="0.1"
+          package/unique_name="dev.aeiouvcode.emptyscene"
+          package/name="EmptySceneSmoke"
+          package/signed=true
+          screen/immersive_mode=true
+          xr_features/xr_mode=0
+          permissions/internet=false
+          PRESET
+
+      - name: Export debug APK (x86_64, gl_compatibility)
+        run: |
+          ./Godot_v4.5-stable_linux.x86_64 --headless --path ci/empty-scene --import || true
+          ./Godot_v4.5-stable_linux.x86_64 --headless --path ci/empty-scene --export-debug "Android" "$GITHUB_WORKSPACE/empty.apk"
+          ls -la empty.apk
+
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Emulator smoke test (same gate as apk-smoke)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_6
+          emulator-boot-timeout: 1500
+          disable-animations: true
+          script: bash ci/smoke.sh empty.apk smoke-out
+
+      - name: Upload smoke results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: empty-scene-smoke-results
+          path: smoke-out/
+          retention-days: 30

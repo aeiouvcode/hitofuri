@@ -1,0 +1,14 @@
+; Engine configuration file.
+; Minimal Godot 4.5 gl_compatibility project for the apk-smoke instrument experiment.
+config_version=5
+
+[application]
+
+config/name="EmptySceneSmoke"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.5", "GL Compatibility")
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

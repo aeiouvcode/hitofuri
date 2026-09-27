@@ -39,6 +39,7 @@ jobs:
           api-level: 34
           arch: ${{ steps.detect.outputs.arch }}
           profile: pixel_6
+          emulator-boot-timeout: 1500
           disable-animations: true
           script: bash ci/smoke.sh app.apk smoke-out
       - name: Upload smoke results

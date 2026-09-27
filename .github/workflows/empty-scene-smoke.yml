@@ -80,7 +80,7 @@ jobs:
           JDK="${JAVA_HOME_17_X64:-$JAVA_HOME}"
           echo "sdk=$SDK jdk=$JDK"
           mkdir -p "$HOME/.config/godot"
-          cat > "$HOME/.config/godot/editor_settings-4.tres" <<SETTINGS
+          cat > "$HOME/.config/godot/editor_settings-4.5.tres" <<SETTINGS
           [gd_resource type="EditorSettings" format=3]
 
           [resource]
@@ -89,7 +89,8 @@ jobs:
           export/android/java_sdk_path = "$JDK"
           export/android/shutdown_adb_on_exit = true
           SETTINGS
-          cat "$HOME/.config/godot/editor_settings-4.tres"
+          cp "$HOME/.config/godot/editor_settings-4.5.tres" "$HOME/.config/godot/editor_settings-4.tres"
+          cat "$HOME/.config/godot/editor_settings-4.5.tres"
 
       - name: Export debug APK (x86_64, gl_compatibility)
         run: |

@@ -8,7 +8,7 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - name: Enable KVM group perms
@@ -18,11 +18,26 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Fetch APK
         run: curl -fL --retry 2 -o app.apk "${{ inputs.apk_url }}"
+      - name: Detect APK ABI -> emulator arch
+        id: detect
+        run: |
+          AAPT="$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/*/aapt 2>/dev/null | sort -V | tail -1)"
+          [ -n "$AAPT" ] || { echo "aapt not found under ANDROID_HOME/build-tools"; exit 1; }
+          "$AAPT" dump badging app.apk > badging.txt 2>&1 || { echo "aapt cannot parse APK"; exit 1; }
+          ABIS="$(grep '^native-code:' badging.txt | sed 's/native-code://' | tr -d " '" | tr '\n' ' ')"
+          echo "detected abis: ${ABIS:-none-declared}"
+          if   echo "$ABIS" | grep -q 'x86_64';    then ARCH=x86_64
+          elif echo "$ABIS" | grep -q 'arm64-v8a'; then ARCH=arm64-v8a
+          elif echo "$ABIS" | grep -q 'armeabi';   then ARCH=armeabi-v7a
+          elif echo "$ABIS" | grep -q 'x86';       then ARCH=x86
+          else ARCH=x86_64; fi
+          echo "emulator arch: $ARCH"
+          echo "arch=$ARCH" >> "$GITHUB_OUTPUT"
       - name: Emulator smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
-          arch: x86_64
+          arch: ${{ steps.detect.outputs.arch }}
           profile: pixel_6
           disable-animations: true
           script: bash ci/smoke.sh app.apk smoke-out

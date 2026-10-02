@@ -1,14 +1,14 @@
-# ISSEN 一閃
+# HITOFURI 一閃
 
 A sumi-e sword duel in the browser. One fighter, one ronin, ink on paper.
 
-![ISSEN duel on an ink-wash field](docs/screenshot.jpg)
+![HITOFURI duel on an ink-wash field](docs/screenshot.jpg)
 
-**Live:** https://aeiouvcode.github.io/issen/
+**Live:** https://aeiouvcode.github.io/hitofuri/
 
 ## About
 
-ISSEN is a third-person duel rendered as a living ink painting. Figures are brushed onto a paper ground, strikes leave slash arcs, and a dodge leaves a ghost behind. The boss changes pattern at half health and some of his strikes are feints: a real strike always shows a ring on the ground first.
+HITOFURI (formerly ISSEN) is a third-person duel rendered as a living ink painting. Figures are brushed onto a paper ground, strikes leave slash arcs, and a dodge leaves a ghost behind. The boss changes pattern at half health and some of his strikes are feints: a real strike always shows a ring on the ground first.
 
 ## Controls
 
@@ -32,8 +32,8 @@ A last-breath dodge reads the incoming strike. The brush setting on the title sc
 ## Run locally
 
 ```sh
-git clone https://github.com/aeiouvcode/issen.git
-cd issen
+git clone https://github.com/aeiouvcode/hitofuri.git
+cd hitofuri
 python3 -m http.server 8000
 ```
 
